@@ -1,0 +1,1 @@
+srun -n 8 /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/swash-11.01/swash.exe /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/1/case_202501250000/1_202501250000.sws
