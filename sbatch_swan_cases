@@ -1,0 +1,22 @@
+#!/bin/sh
+#SBATCH --output=swash_%A_%a.out
+#SBATCH --time=2:00:00
+#SBATCH --ntasks=16
+#SBATCH --nodes=1
+#SBATCH --array=1-56# %10  #number of cases
+
+cd /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/12 || exit 1
+
+# get casz folder
+CASE=$(ls -d case_* | sed -n "${SLURM_ARRAY_TASK_ID}p")
+cd $CASE || exit 1
+pwd
+ls -l
+echo "Running $CASE"
+
+#find the .sws file automatically
+SWS_FILE=$(ls *.sws)
+SWS_PATH="$PWD/$SWS_FILE"
+echo "Using file: $SWS_PATH"
+srun --chdir="$PWD" /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/swash-11.01/swash.exe < "$SWS_PATH"
+
