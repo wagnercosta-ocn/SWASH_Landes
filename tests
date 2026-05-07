@@ -1,14 +1,247 @@
-srun -n 8 /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/swash-11.01/swash.exe /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/1/case_202501250000/1_202501250000.sws
-srun: job 28097726 queued and waiting for resources
-srun: job 28097726 has been allocated resources
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 0
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 1
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 2
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 3
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 4
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 5
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 6
-application called MPI_Abort(MPI_COMM_WORLD, 4) - process 7
-slurmstepd: error: *** STEP 28097726.0 ON belenos106 CANCELLED AT 2026-05-07T08:54:37 ***
-srun: Job step aborted: Waiting up to 362 seconds for job step to finish.
-srun: error: belenos106: tasks 0-7: Killed
+import numpy as np
+import pandas as pd
+import os
+import glob
+from math import radians, sin, cos
+from datetime import datetime
+
+# =========================
+# USER INPUTS
+# =========================
+csv_file = "/scratch/work/langercostaw/swash_landes/transects_processed/transects_processed.csv"
+aut_folder = "/scratch/work/langercostaw/swash_landes/swash_cases/AUT"
+output_root = "swash_runs"
+
+# --- DATE FILTER ---
+start_date = "202501250000"
+end_date = "202501312359"
+
+start_dt = datetime.strptime(start_date, "%Y%m%d%H%M")
+end_dt = datetime.strptime(end_date, "%Y%m%d%H%M")
+
+os.makedirs(output_root, exist_ok=True)
+
+# =========================
+# HAVERSINE
+# =========================
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371000
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    return 2 * R * np.arcsin(np.sqrt(a))
+
+# =========================
+# LOAD TRANSECTS
+# =========================
+df = pd.read_csv(csv_file)
+
+transects = {}
+
+for tid, g in df.groupby("transect_id"):
+    g = g.sort_values("extension")
+
+    offshore = g.iloc[-1]
+
+    transects[tid] = {
+        "lat": offshore["lat"],
+        "lon": offshore["lon"],
+        "angle": g["orientation_deg"].iloc[0],
+        "depths": g["smooth_depth"].values[::-1] * -1,
+        "x": g["extension"].values[::-1]
+    }
+
+    transects[tid]["x"] -= transects[tid]["x"].min()
+
+# =========================
+# READ AUT (FIXED)
+# =========================
+def read_aut_file(file):
+
+    blocks = []
+
+    with open(file) as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+
+        parts = lines[i].split()
+
+        if len(parts) == 7:
+            lon, lat = float(parts[0]), float(parts[1])
+            date = parts[2]
+            nf, nd = int(float(parts[3])), int(float(parts[4]))
+            d0, f0 = float(parts[5]), float(parts[6])
+
+            i += 1
+
+            data = []
+            for _ in range(nd): # rows = directions
+                row = []
+                while len(row) < nf:
+                    row.extend([float(x) for x in lines[i].split()])
+                    i += 1
+                data.append(row[:nf])
+
+            blocks.append({
+                "lat": lat,
+                "lon": lon,
+                "date": date,
+                "nf": nf,
+                "nd": nd,
+                "f0": f0,
+                "d0": d0,
+                "spec": np.array(data) # (nd, nf)
+            })
+        else:
+            i += 1
+
+    return blocks
+
+# =========================
+# SPECTRUM QUALITY
+# =========================
+def check_spectrum_quality(freqs, Sf):
+
+    df = np.diff(freqs)
+    df = np.append(df, df[-1])
+
+    m0 = np.sum(Sf * df)
+    Hs = 4 * np.sqrt(m0) if m0 > 0 else 0
+
+    fp = freqs[np.argmax(Sf)] if np.max(Sf) > 0 else 0
+    Tp = 1 / fp if fp > 0 else 0
+
+    flags = []
+    if Hs < 0.05 or Hs > 20:
+        flags.append(f"Hs={Hs:.2f}")
+    if Tp < 2 or Tp > 25:
+        flags.append(f"Tp={Tp:.2f}")
+
+    return len(flags) == 0, Hs, Tp, flags
+
+# =========================
+# WRITE SPECTRUM
+# =========================
+def write_spectrum(folder, tid, block):
+
+    nf = block["nf"]
+    f0 = block["f0"]
+
+    freqs = np.array([f0 * (1.1 ** i) for i in range(nf)])
+    spec = block["spec"]
+
+    Sf = np.sum(spec, axis=0) # integrate directions
+
+    ok, Hs, Tp, flags = check_spectrum_quality(freqs, Sf)
+
+    if not ok:
+        print(f"⚠️ BAD → {tid} {block['date']} {flags}")
+    else:
+        print(f"OK → {tid} {block['date']} Hs={Hs:.2f} Tp={Tp:.1f}")
+
+    fname = f"{tid}_{block['date']}.sp1d"
+    path = os.path.join(folder, fname)
+
+    with open(path, "w") as f:
+        f.write("SPEC1D\n")
+        for fr, s in zip(freqs, Sf):
+            f.write(f"{fr:.5f} {s:.6e}\n")
+
+    return fname
+
+# =========================
+# WRITE SWS
+# =========================
+def write_sws(folder, tid, data, spec_file, block):
+
+    x = data["x"]
+    dx = abs(np.mean(np.diff(x)))
+    mxc = len(x)
+    xlen = mxc*dx
+
+    alfa = 270 - data["angle"]
+    date = block["date"]
+
+    path = os.path.join(folder, f"{tid}_{date}.sws")
+
+    with open(path, "w") as f:
+
+        f.write(f"PROJ 'Landes+Pays-Basque' 'Transect {tid}'\n")
+        f.write("SET 0 90 0.0 200 2 NAUTICAL\n\n")
+
+        f.write("MODE DYN ONED\n\n")
+
+        f.write(f"CGRID REG 0 0 {alfa:.2f} {xlen:.2f} 0 {mxc-1} 0\n")
+        f.write("VERT 1\n")
+
+        f.write(f"INPGRID BOTTOM 0 0 {alfa:.2f} {mxc-1} 0 {abs(dx):.3f} 0\n")
+        f.write(f"READINP BOTTOM 1 '{tid}.bot' 1 0 FREE\n\n")
+
+        f.write("INIT ZERO\n\n")
+
+        f.write(f"BOU SIDE W CCW BTYPE WEAK CON SPECFILE '{spec_file}'\n\n")
+
+        f.write("BOU SIDE E CCW BTYPE RADIATION\n\n")
+
+        f.write("FRIC MANNING 0.019\n")
+        f.write("TIMEI METH EXPL 0.2 0.5\n")
+        f.write("BREAK\nNONHYDROSTATIC\n")
+
+        f.write("QUANT HS SETUP HRUN DUR 40 MIN\n")
+        f.write(f"FRAME 'GRID' 0 0 {alfa:.2f} {xlen:.2f} 0 {mxc-1} 0\n")
+
+        f.write(f"BLOCK 'GRID' NOHEAD 'output_{tid}_{date}.mat' LAY 3 XP DEPTH BOTL WATLEV HRUN BRKP SETUP HSIG HRMS\n")
+
+        f.write("TEST 1,0\n")
+        f.write("COMPUTE 000000.000 0.001 SEC 7200\nSTOP\n")
+
+# =========================
+# MAIN LOOP
+# =========================
+aut_files = glob.glob(os.path.join(aut_folder, "AUT*"))
+
+processed = set()
+
+for aut in aut_files:
+
+    print(f"Processing {aut}")
+    blocks = read_aut_file(aut)
+
+    for block in blocks:
+
+        dt = datetime.strptime(block["date"], "%Y%m%d%H%M")
+        if not (start_dt <= dt <= end_dt):
+            continue
+
+        for tid, data in transects.items():
+
+            key = (tid, block["date"])
+            if key in processed:
+                continue
+
+            dist = haversine(data["lat"], data["lon"], block["lat"], block["lon"])
+
+            if dist > 50000:
+                continue
+
+            transect_folder = os.path.join(output_root, str(tid))
+            case_folder = os.path.join(transect_folder, f"case_{block['date']}")
+
+            os.makedirs(case_folder, exist_ok=True)
+
+            # BOT
+            np.savetxt(os.path.join(case_folder, f"{tid}.bot"),
+                       data["depths"], fmt="%.5f")
+
+            # SPEC
+            spec_file = write_spectrum(case_folder, tid, block)
+
+            # SWS
+            write_sws(case_folder, tid, data, spec_file, block)
+
+            processed.add(key)
+
+print("✅ Pipeline completed.")
+~
