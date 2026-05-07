@@ -1,22 +1,39 @@
-#!/bin/sh
+#!/bin/bash
+#SBATCH --job-name=swash
 #SBATCH --output=swash_%A_%a.out
 #SBATCH --time=2:00:00
 #SBATCH --ntasks=16
 #SBATCH --nodes=1
-#SBATCH --array=1-56# %10  #number of cases
+#SBATCH --array=1-560%10
 
-cd /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/12 || exit 1
+BASE_DIR=/scratch/work/langercostaw/swash_landes/swash_cases/swash_runs
 
-# get casz folder
-CASE=$(ls -d case_* | sed -n "${SLURM_ARRAY_TASK_ID}p")
-cd $CASE || exit 1
+cd $BASE_DIR || exit 1
+
+# Get case directory from list
+CASE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" case_list.txt)
+
+echo "Selected case:"
+echo "$CASE"
+
+cd "$CASE" || exit 1
+
 pwd
 ls -l
-echo "Running $CASE"
 
-#find the .sws file automatically
-SWS_FILE=$(ls *.sws)
-SWS_PATH="$PWD/$SWS_FILE"
-echo "Using file: $SWS_PATH"
-srun --chdir="$PWD" /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/swash-11.01/swash.exe < "$SWS_PATH"
+# Find .sws automatically
+SWS_FILE=$(ls *.sws | head -n 1)
 
+echo "Using file: $SWS_FILE"
+
+# Remove extension for SWASH
+INPUT_NAME=${SWS_FILE%.sws}
+
+echo "Input name: $INPUT_NAME"
+
+# Run SWASH
+srun \
+    --ntasks=16 \
+    --chdir="$PWD" \
+    /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/swash-11.01/swash.exe \
+    "$INPUT_NAME"
