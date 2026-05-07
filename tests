@@ -1,1 +1,14 @@
 srun -n 8 /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/swash-11.01/swash.exe /scratch/work/langercostaw/swash_landes/swash_cases/swash_runs/1/case_202501250000/1_202501250000.sws
+srun: job 28097726 queued and waiting for resources
+srun: job 28097726 has been allocated resources
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 0
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 1
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 2
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 3
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 4
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 5
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 6
+application called MPI_Abort(MPI_COMM_WORLD, 4) - process 7
+slurmstepd: error: *** STEP 28097726.0 ON belenos106 CANCELLED AT 2026-05-07T08:54:37 ***
+srun: Job step aborted: Waiting up to 362 seconds for job step to finish.
+srun: error: belenos106: tasks 0-7: Killed
