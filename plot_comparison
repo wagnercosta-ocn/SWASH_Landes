@@ -1,0 +1,74 @@
+import pandas as pd
+import numpy as np
+
+# ============================================
+# INPUT FILES
+# ============================================
+file_a = "runup_A.csv"
+file_b = "runup_B.csv"
+
+output_file = "runup_comparison.csv"
+
+# ============================================
+# LOAD
+# ============================================
+df_a = pd.read_csv(file_a)
+
+df_b = pd.read_csv(file_b)
+
+# ============================================
+# RENAME RUNUP COLUMNS
+# ============================================
+df_a = df_a.rename(columns={
+    "Runup": "Runup_A"
+})
+
+df_b = df_b.rename(columns={
+    "Runup": "Runup_B"
+})
+
+# ============================================
+# MERGE ON TRANSECT + DATE
+# ============================================
+df = pd.merge(
+    df_a,
+    df_b,
+    on=["Transect_ID", "Date"],
+    how="inner"
+)
+
+# ============================================
+# DIFFERENCES
+# ============================================
+df["Difference"] = df["Runup_B"] - df["Runup_A"]
+
+df["Abs_Difference"] = np.abs(df["Difference"])
+
+# ============================================
+# BASIC STATISTICS
+# ============================================
+rmse = np.sqrt(np.mean(df["Difference"]**2))
+
+bias = np.mean(df["Difference"])
+
+mae = np.mean(df["Abs_Difference"])
+
+corr = df["Runup_A"].corr(df["Runup_B"])
+
+print("\n===================================")
+print("RUN-UP COMPARISON")
+print("===================================")
+
+print(f"Number of matching cases : {len(df)}")
+print(f"Bias (B - A)             : {bias:.3f} m")
+print(f"MAE                      : {mae:.3f} m")
+print(f"RMSE                     : {rmse:.3f} m")
+print(f"Correlation              : {corr:.3f}")
+
+# ============================================
+# SAVE
+# ============================================
+df.to_csv(output_file, index=False)
+
+print("\nSaved:")
+print(output_file)
