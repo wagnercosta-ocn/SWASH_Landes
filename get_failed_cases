@@ -23,9 +23,11 @@ root_dir = 'swash_runs'
 
 
 # ============================================================
-# OUTPUT TEXT FILE
+# OUTPUT FILES
 # ============================================================
-output_txt = 'nan_cases.txt'
+nan_output_txt = 'nan_cases.txt'
+
+missing_output_txt = 'missing_mat_cases.txt'
 
 
 # ============================================================
@@ -37,13 +39,15 @@ transects = sorted(
 
 
 # ============================================================
-# STORE CASES WITH NaN
+# STORAGE
 # ============================================================
 nan_cases = []
 
+missing_mat_cases = []
+
 
 # ============================================================
-# LOOP THROUGH ALL TRANSECTS
+# LOOP THROUGH TRANSECTS
 # ============================================================
 for transect_path in transects:
 
@@ -52,12 +56,12 @@ for transect_path in transects:
 
     transect_id = os.path.basename(transect_path)
 
-    print(f'\n==============================')
+    print('\n====================================')
     print(f'Processing transect: {transect_id}')
-    print(f'==============================')
+    print('====================================')
 
     # --------------------------------------------------------
-    # FIND ALL CASES (DATES)
+    # FIND ALL CASES
     # --------------------------------------------------------
     case_paths = sorted(
         glob.glob(os.path.join(transect_path, '*'))
@@ -73,22 +77,31 @@ for transect_path in transects:
 
         case_date = os.path.basename(case_path)
 
-        print(f'  Checking case: {case_date}')
+        case_id = f'{transect_id}/{case_date}'
+
+        print(f'  Checking case: {case_id}')
 
         # ----------------------------------------------------
-        # FIND .MAT FILE
+        # SEARCH FOR .MAT FILES
         # ----------------------------------------------------
         mat_files = glob.glob(
             os.path.join(case_path, '*.mat')
         )
 
+        # ----------------------------------------------------
+        # CASE: NO .MAT FILE
+        # ----------------------------------------------------
         if len(mat_files) == 0:
 
             print('    No .mat file found.')
 
+            missing_mat_cases.append(case_id)
+
             continue
 
-        # Use first .mat file
+        # ----------------------------------------------------
+        # USE FIRST .MAT FILE
+        # ----------------------------------------------------
         mat_file = mat_files[0]
 
         try:
@@ -111,9 +124,14 @@ for transect_path in transects:
 
                     break
 
+            # ------------------------------------------------
+            # CASE: Watlev NOT FOUND
+            # ------------------------------------------------
             if watlev_key is None:
 
                 print('    Watlev variable not found.')
+
+                nan_cases.append(case_id)
 
                 continue
 
@@ -127,17 +145,15 @@ for transect_path in transects:
             # ------------------------------------------------
             if np.isnan(watlev).any():
 
-                output_path = (
-                    f'{transect_id}/{case_date}'
-                )
+                print(f'    NaN found -> {case_id}')
 
-                print(f'    NaN found -> {output_path}')
-
-                nan_cases.append(output_path)
+                nan_cases.append(case_id)
 
         except Exception as e:
 
             print(f'    Error reading file: {e}')
+
+            nan_cases.append(case_id)
 
 
 # ============================================================
@@ -145,13 +161,25 @@ for transect_path in transects:
 # ============================================================
 nan_cases = sorted(list(set(nan_cases)))
 
+missing_mat_cases = sorted(list(set(missing_mat_cases)))
+
 
 # ============================================================
-# SAVE RESULTS
+# SAVE NaN CASES
 # ============================================================
-with open(output_txt, 'w') as f:
+with open(nan_output_txt, 'w') as f:
 
     for case in nan_cases:
+
+        f.write(case + '\n')
+
+
+# ============================================================
+# SAVE MISSING .MAT CASES
+# ============================================================
+with open(missing_output_txt, 'w') as f:
+
+    for case in missing_mat_cases:
 
         f.write(case + '\n')
 
@@ -163,6 +191,10 @@ print('\n======================================')
 
 print(f'Total cases with NaN: {len(nan_cases)}')
 
-print(f'Results saved to: {output_txt}')
+print(f'Total cases without .mat: {len(missing_mat_cases)}')
+
+print(f'NaN cases saved to: {nan_output_txt}')
+
+print(f'Missing .mat cases saved to: {missing_output_txt}')
 
 print('======================================')
