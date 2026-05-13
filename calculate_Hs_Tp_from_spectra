@@ -1,0 +1,90 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# ============================================================
+# FUNCTION TO COMPUTE Hs AND Tp FROM A 1D SWASH SPECTRUM
+# ============================================================
+def compute_wave_parameters(freq, energy):
+
+    # --------------------------------------------------------
+    # Spectral zeroth moment (m0)
+    # --------------------------------------------------------
+    m0 = np.trapz(energy, freq)
+
+    # --------------------------------------------------------
+    # Significant wave height
+    #
+    # Hs = 4 * sqrt(m0)
+    # --------------------------------------------------------
+    Hs = 4.0 * np.sqrt(m0)
+
+    # --------------------------------------------------------
+    # Peak period
+    #
+    # Tp = 1 / fp
+    # --------------------------------------------------------
+    peak_index = np.argmax(energy)
+
+    fp = freq[peak_index]
+
+    Tp = 1.0 / fp
+
+    return Hs, Tp
+
+
+# ============================================================
+# LOAD SWASH 1D SPECTRUM FILE
+#
+# Expected format:
+#
+# freq(Hz)    S(f)
+#
+# Example:
+# 0.0400      0.0012
+# 0.0450      0.0021
+# 0.0500      0.0045
+# ...
+# ============================================================
+
+spectrum_file = 'spectrum_1d.txt'
+
+data = np.loadtxt(spectrum_file)
+
+freq = data[:, 0]
+
+energy = data[:, 1]
+
+
+# ============================================================
+# COMPUTE WAVE PARAMETERS
+# ============================================================
+Hs, Tp = compute_wave_parameters(freq, energy)
+
+print('\n======================================')
+print(f'Significant Wave Height (Hs): {Hs:.3f} m')
+print(f'Peak Period (Tp): {Tp:.3f} s')
+print('======================================\n')
+
+
+# ============================================================
+# PLOT SPECTRUM
+# ============================================================
+plt.figure(figsize=(8, 4))
+
+plt.plot(freq, energy, 'b', linewidth=2)
+
+plt.xlabel('Frequency (Hz)', fontsize=14)
+
+plt.ylabel('Energy Density (m²/Hz)', fontsize=14)
+
+plt.title(
+    f'1D Wave Spectrum\nHs = {Hs:.2f} m   |   Tp = {Tp:.2f} s',
+    fontsize=14
+)
+
+plt.grid(True)
+
+plt.tight_layout()
+
+plt.show()
