@@ -1,0 +1,168 @@
+import os
+import glob
+import numpy as np
+from scipy.io import loadmat
+
+
+# ============================================================
+# ROOT DIRECTORY
+#
+# Expected structure:
+#
+# swash_runs/
+# ├── T001/
+# │   ├── 20250125/
+# │   │   └── *.mat
+# │   ├── 20250126/
+# │
+# ├── T002/
+# │   ├── 20250125/
+# │
+# ============================================================
+root_dir = 'swash_runs'
+
+
+# ============================================================
+# OUTPUT TEXT FILE
+# ============================================================
+output_txt = 'nan_cases.txt'
+
+
+# ============================================================
+# FIND ALL TRANSECTS
+# ============================================================
+transects = sorted(
+    glob.glob(os.path.join(root_dir, '*'))
+)
+
+
+# ============================================================
+# STORE CASES WITH NaN
+# ============================================================
+nan_cases = []
+
+
+# ============================================================
+# LOOP THROUGH ALL TRANSECTS
+# ============================================================
+for transect_path in transects:
+
+    if not os.path.isdir(transect_path):
+        continue
+
+    transect_id = os.path.basename(transect_path)
+
+    print(f'\n==============================')
+    print(f'Processing transect: {transect_id}')
+    print(f'==============================')
+
+    # --------------------------------------------------------
+    # FIND ALL CASES (DATES)
+    # --------------------------------------------------------
+    case_paths = sorted(
+        glob.glob(os.path.join(transect_path, '*'))
+    )
+
+    # --------------------------------------------------------
+    # LOOP THROUGH CASES
+    # --------------------------------------------------------
+    for case_path in case_paths:
+
+        if not os.path.isdir(case_path):
+            continue
+
+        case_date = os.path.basename(case_path)
+
+        print(f'  Checking case: {case_date}')
+
+        # ----------------------------------------------------
+        # FIND .MAT FILE
+        # ----------------------------------------------------
+        mat_files = glob.glob(
+            os.path.join(case_path, '*.mat')
+        )
+
+        if len(mat_files) == 0:
+
+            print('    No .mat file found.')
+
+            continue
+
+        # Use first .mat file
+        mat_file = mat_files[0]
+
+        try:
+
+            # ------------------------------------------------
+            # LOAD MATLAB FILE
+            # ------------------------------------------------
+            data = loadmat(mat_file)
+
+            # ------------------------------------------------
+            # FIND Watlev VARIABLE
+            # ------------------------------------------------
+            watlev_key = None
+
+            for key in data.keys():
+
+                if 'Watlev' in key:
+
+                    watlev_key = key
+
+                    break
+
+            if watlev_key is None:
+
+                print('    Watlev variable not found.')
+
+                continue
+
+            # ------------------------------------------------
+            # READ Watlev
+            # ------------------------------------------------
+            watlev = data[watlev_key]
+
+            # ------------------------------------------------
+            # CHECK FOR NaN
+            # ------------------------------------------------
+            if np.isnan(watlev).any():
+
+                output_path = (
+                    f'{transect_id}/{case_date}'
+                )
+
+                print(f'    NaN found -> {output_path}')
+
+                nan_cases.append(output_path)
+
+        except Exception as e:
+
+            print(f'    Error reading file: {e}')
+
+
+# ============================================================
+# REMOVE DUPLICATES
+# ============================================================
+nan_cases = sorted(list(set(nan_cases)))
+
+
+# ============================================================
+# SAVE RESULTS
+# ============================================================
+with open(output_txt, 'w') as f:
+
+    for case in nan_cases:
+
+        f.write(case + '\n')
+
+
+# ============================================================
+# SUMMARY
+# ============================================================
+print('\n======================================')
+
+print(f'Total cases with NaN: {len(nan_cases)}')
+
+print(f'Results saved to: {output_txt}')
+
+print('======================================')
