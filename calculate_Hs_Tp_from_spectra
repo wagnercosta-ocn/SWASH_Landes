@@ -7,23 +7,13 @@ import matplotlib.pyplot as plt
 # ============================================================
 def compute_wave_parameters(freq, energy):
 
-    # --------------------------------------------------------
-    # Spectral zeroth moment (m0)
-    # --------------------------------------------------------
+    # Zeroth spectral moment
     m0 = np.trapz(energy, freq)
 
-    # --------------------------------------------------------
     # Significant wave height
-    #
-    # Hs = 4 * sqrt(m0)
-    # --------------------------------------------------------
     Hs = 4.0 * np.sqrt(m0)
 
-    # --------------------------------------------------------
     # Peak period
-    #
-    # Tp = 1 / fp
-    # --------------------------------------------------------
     peak_index = np.argmax(energy)
 
     fp = freq[peak_index]
@@ -34,26 +24,59 @@ def compute_wave_parameters(freq, energy):
 
 
 # ============================================================
-# LOAD SWASH 1D SPECTRUM FILE
-#
-# Expected format:
-#
-# freq(Hz)    S(f)
-#
-# Example:
-# 0.0400      0.0012
-# 0.0450      0.0021
-# 0.0500      0.0045
-# ...
+# READ SWASH SPEC1D FILE
 # ============================================================
+spectrum_file = 'SPEC1D'
 
-spectrum_file = 'spectrum_1d.txt'
 
-data = np.loadtxt(spectrum_file)
+# ------------------------------------------------------------
+# READ FILE LINES
+# ------------------------------------------------------------
+with open(spectrum_file, 'r') as f:
 
-freq = data[:, 0]
+    lines = f.readlines()
 
-energy = data[:, 1]
+
+# ============================================================
+# EXTRACT NUMERIC DATA
+#
+# SWASH spectral files usually contain header text before the
+# numerical spectral table.
+#
+# This block automatically skips non-numeric lines.
+# ============================================================
+freq = []
+
+energy = []
+
+for line in lines:
+
+    parts = line.split()
+
+    # Skip empty lines
+    if len(parts) < 2:
+        continue
+
+    try:
+
+        fval = float(parts[0])
+
+        sval = float(parts[1])
+
+        freq.append(fval)
+
+        energy.append(sval)
+
+    except ValueError:
+
+        # Ignore header/text lines
+        continue
+
+
+# Convert to numpy arrays
+freq = np.array(freq)
+
+energy = np.array(energy)
 
 
 # ============================================================
@@ -61,9 +84,16 @@ energy = data[:, 1]
 # ============================================================
 Hs, Tp = compute_wave_parameters(freq, energy)
 
+
+# ============================================================
+# PRINT RESULTS
+# ============================================================
 print('\n======================================')
+
 print(f'Significant Wave Height (Hs): {Hs:.3f} m')
+
 print(f'Peak Period (Tp): {Tp:.3f} s')
+
 print('======================================\n')
 
 
@@ -72,14 +102,25 @@ print('======================================\n')
 # ============================================================
 plt.figure(figsize=(8, 4))
 
-plt.plot(freq, energy, 'b', linewidth=2)
+plt.plot(
+    freq,
+    energy,
+    'b',
+    linewidth=2
+)
 
-plt.xlabel('Frequency (Hz)', fontsize=14)
+plt.xlabel(
+    'Frequency (Hz)',
+    fontsize=14
+)
 
-plt.ylabel('Energy Density (m²/Hz)', fontsize=14)
+plt.ylabel(
+    'Energy Density (m²/Hz)',
+    fontsize=14
+)
 
 plt.title(
-    f'1D Wave Spectrum\nHs = {Hs:.2f} m   |   Tp = {Tp:.2f} s',
+    f'SWASH 1D Spectrum\nHs = {Hs:.2f} m   |   Tp = {Tp:.2f} s',
     fontsize=14
 )
 
