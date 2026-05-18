@@ -15,13 +15,13 @@ from matplotlib import pyplot as plt
 # swash_runs/T001/20250125
 # swash_runs/T002/20250126
 # ============================================================
-txt_file = 'folder_list.txt'
+txt_file = 'case_list.txt'
 
 
 # ============================================================
 # ROOT DIRECTORY
 # ============================================================
-root_dir = 'swash_runs'
+root_dir = '/scratch/work/langercostaw/swash_landes/swash_cases/swash_runs'
 
 
 # ============================================================
@@ -45,16 +45,16 @@ mat_pattern = '*.mat'
 threshold = 0.01  # meters
 
 # Plot limits
-xlim = [1750, 2200]
-ylim = [-5, 5]
+#xlim = [1750, 2200]
+#ylim = [-5, 5]
 
 
 # ============================================================
 # READ LIST OF CASE FOLDERS
 # ============================================================
 with open(txt_file, 'r') as f:
-    folders = [line.strip() for line in f if line.strip()]
-
+    relative_folders = [line.strip() for line in f if line.strip()]
+folders = [os.path.join(root_dir, rel_folder) for rel_folder in relative_folders]
 
 # ============================================================
 # MAIN LOOP
@@ -109,10 +109,10 @@ for folder in folders:
         botlev = data['Botlev'][0] * -1
 
         # Hrunup is optional
-        if 'Hrunup' in data:
-            hrunup = data['Hrunup'][0]
-        else:
-            hrunup = None
+        #if 'Hrunup' in data:
+        #    hrunup = data['Hrunup'][0]
+        #else:
+        #    hrunup = None
 
         # ----------------------------------------------------
         # COMPUTE WAVE RUNUP
@@ -127,7 +127,7 @@ for folder in folders:
 
         if len(indices) > 0:
 
-            runup_idx = indices[-1]
+            runup_idx = indices[0]
 
             runup_x = xp[runup_idx]
 
@@ -149,7 +149,7 @@ for folder in folders:
         # CREATE FIGURE
         # ----------------------------------------------------
         plt.figure(figsize=[10, 5])
-
+        ax=plt.gca()
         plt.plot(
             xp,
             watlev,
@@ -164,14 +164,14 @@ for folder in folders:
             label='beach profile'
         )
 
-        if hrunup is not None:
+        #if hrunup is not None:
 
-            plt.plot(
-                xp,
-                hrunup,
-                'g',
-                label='Hrunup'
-            )
+        #    plt.plot(
+        #        xp,
+        #        hrunup,
+        #        'g',
+        #        label='Hrunup'
+        #    )
 
         # ----------------------------------------------------
         # MARK WAVE RUNUP LOCATION
@@ -186,23 +186,24 @@ for folder in folders:
             )
 
             plt.text(
-                runup_x,
-                runup_z + 0.3,
+                0.75,
+                0.2,
                 runup_text,
                 fontsize=10,
                 color='red',
                 bbox=dict(
                     facecolor='white',
                     alpha=0.8
-                )
+                ),
+                transform=ax.transAxes
             )
 
         # ----------------------------------------------------
         # FIGURE SETTINGS
         # ----------------------------------------------------
-        plt.xlim(xlim)
+        #plt.xlim(xlim)
 
-        plt.ylim(ylim)
+        #plt.ylim(ylim)
 
         plt.grid(True)
 
@@ -229,11 +230,13 @@ for folder in folders:
         # Example:
         # swash_runs/figures/T001_20250125.png
         # ----------------------------------------------------
-        folder_parts = folder.split(os.sep)
+        relative_path= os.path.relpath(folder,root_dir)
 
-        transect_id = folder_parts[-2]
+        folder_parts = relative_path.split(os.sep)
 
-        case_date = folder_parts[-1]
+        transect_id = folder_parts[0]
+
+        case_date = folder_parts[1]
 
         output_name = f'{transect_id}_{case_date}.png'
 
@@ -258,3 +261,5 @@ for folder in folders:
     except Exception as e:
 
         print(f'  Error: {e}')
+~
+~
