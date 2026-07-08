@@ -1,0 +1,168 @@
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import LineString, MultiLineString, Point
+from pyproj import Transformer
+
+# ==========================================================
+# USER PARAMETERS
+# ==========================================================
+
+COASTLINE = "coastline.shp"
+
+OUTPUT_CSV = "transects.csv"
+
+TRANSECT_SPACING = 100      # m
+
+TRANSECT_LENGTH = 2000      # m (centered on coastline)
+
+POINT_SPACING = 1           # m
+
+# CRS of coastline (projected in metres)
+# Example:
+# EPSG:2154 Lambert93
+# EPSG:32631 UTM31N
+# EPSG:32630 UTM30N
+
+PROJECTED_CRS = "EPSG:2154"
+
+OUTPUT_CRS = "EPSG:4326"
+
+# ==========================================================
+# FUNCTIONS
+# ==========================================================
+
+def azimuth(dx, dy):
+    """
+    Azimuth clockwise from North.
+    """
+    angle = np.degrees(np.arctan2(dx, dy))
+    return (angle + 360) % 360
+
+
+def build_transect(line, distance):
+
+    p = line.interpolate(distance)
+
+    delta = 1.0
+
+    d1 = max(distance - delta, 0)
+
+    d2 = min(distance + delta, line.length)
+
+    p1 = line.interpolate(d1)
+    p2 = line.interpolate(d2)
+
+    dx = p2.x - p1.x
+    dy = p2.y - p1.y
+
+    L = np.hypot(dx, dy)
+
+    dx /= L
+    dy /= L
+
+    # Normal vector
+    nx = -dy
+    ny = dx
+
+    half = TRANSECT_LENGTH / 2
+
+    start = Point(
+        p.x - half * nx,
+        p.y - half * ny
+    )
+
+    end = Point(
+        p.x + half * nx,
+        p.y + half * ny
+    )
+
+    orientation = azimuth(nx, ny)
+
+    return LineString([start, end]), orientation
+
+
+# ==========================================================
+# LOAD COASTLINE
+# ==========================================================
+
+coast = gpd.read_file(COASTLINE)
+
+coast = coast.to_crs(PROJECTED_CRS)
+
+transformer = Transformer.from_crs(
+    PROJECTED_CRS,
+    OUTPUT_CRS,
+    always_xy=True
+)
+
+# ==========================================================
+# GENERATE TRANSECTS
+# ==========================================================
+
+rows = []
+
+transect_id = 1
+
+for geom in coast.geometry:
+
+    if isinstance(geom, MultiLineString):
+        lines = list(geom.geoms)
+    else:
+        lines = [geom]
+
+    for line in lines:
+
+        distances = np.arange(
+            0,
+            line.length,
+            TRANSECT_SPACING
+        )
+
+        for d in distances:
+
+            transect, orientation = build_transect(line, d)
+
+            length = transect.length
+
+            samples = np.arange(
+                0,
+                length + POINT_SPACING,
+                POINT_SPACING
+            )
+
+            for s in samples:
+
+                pt = transect.interpolate(s)
+
+                lon, lat = transformer.transform(
+                    pt.x,
+                    pt.y
+                )
+
+                rows.append({
+                    "transect_id": transect_id,
+                    "lon": lon,
+                    "lat": lat,
+                    "orientation": orientation
+                })
+
+            transect_id += 1
+
+# ==========================================================
+# SAVE
+# ==========================================================
+
+df = pd.DataFrame(rows)
+
+df.to_csv(OUTPUT_CSV, index=False)
+
+print(df.head())
+
+print()
+
+print(f"{transect_id-1} transects generated.")
+
+print(f"{len(df)} sampled points.")
+
+print("Finished.")
