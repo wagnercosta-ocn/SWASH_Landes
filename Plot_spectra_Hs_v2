@@ -1,0 +1,102 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# ==========================================================
+# INPUT
+# ==========================================================
+
+file1 = "/scratch/work/langercostaw/swash_landes/swash_cases/OUT/spectrum_-1.504125049628507_43.58564849638961_noassi.npy"
+
+spec = np.load(file1)          # shape = (ntime, nfreq, ndir)
+
+ntime, nfreq, ndir = spec.shape
+
+name_spec = "noassi"
+
+# ==========================================================
+# GRID
+# ==========================================================
+
+directions = np.linspace(0, 2*np.pi, ndir, endpoint=False)
+
+f0 = 0.035
+growth = 1.1
+
+frequencies = f0 * growth**np.arange(nfreq)
+periods = 1.0 / frequencies
+
+# Variable Δf
+df = np.empty_like(frequencies)
+df[1:-1] = 0.5*(frequencies[2:] - frequencies[:-2])
+df[0] = frequencies[1] - frequencies[0]
+df[-1] = frequencies[-1] - frequencies[-2]
+
+dtheta = 2*np.pi / ndir
+
+# ==========================================================
+# DIRECTIONAL Hs FOR EACH TIME STEP
+# ==========================================================
+
+Hs_time = np.zeros((ntime, ndir))
+
+for t in range(ntime):
+
+    spectrum = spec[t]              # (nfreq, ndir)
+
+    m0_dir = np.sum(spectrum * df[:, None], axis=0) * dtheta
+
+    Hs_time[t] = 4*np.sqrt(np.maximum(m0_dir, 0))
+
+# ==========================================================
+# TIME MEAN
+# ==========================================================
+
+Hs_mean = np.mean(Hs_time, axis=0)
+
+# ==========================================================
+# REPEAT ALONG PERIOD AXIS
+# ==========================================================
+
+Hs_plot = np.tile(Hs_mean, (nfreq, 1))
+
+periods = periods[::-1]
+Hs_plot = Hs_plot[::-1]
+
+Theta, Radius = np.meshgrid(directions, periods)
+
+# ==========================================================
+# PLOT
+# ==========================================================
+
+fig = plt.figure(figsize=(7,7))
+ax = plt.subplot(111, projection="polar")
+
+ax.set_theta_zero_location("N")
+ax.set_theta_direction(-1)
+
+pcm = ax.pcolormesh(
+    Theta,
+    Radius,
+    Hs_plot,
+    cmap="viridis",
+    shading="auto"
+)
+
+period_ticks = [5,8,10,12,15,20]
+
+ax.set_yticks(period_ticks)
+ax.set_yticklabels([f"{p}s" for p in period_ticks])
+
+ax.set_ylim(periods.min(), periods.max())
+
+ax.set_thetagrids(
+    np.arange(0,360,45),
+    labels=["N","NE","E","SE","S","SW","W","NW"]
+)
+
+cbar = plt.colorbar(pcm, pad=0.1, shrink=0.7)
+cbar.set_label("Mean directional $H_s$ (m)")
+
+plt.tight_layout()
+plt.show()
