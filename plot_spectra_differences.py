@@ -60,9 +60,6 @@ growth = 1.1
 n_freq = 30
 frequencies = f0 * growth**np.arange(n_freq)
 
-# Getting Hs
-
-
 # Convert to PERIOD (this is your radial coordinate)
 periods = 1 / frequencies
 
@@ -140,3 +137,4 @@ os.makedirs("outputs_landes", exist_ok=True)
 plt.savefig("outputs_landes/diff_spectrum_"+lon+"_"+lat+"_"+name_spec1+"-"+name_spec2+"_Jan_May_2025.png", dpi=500)
 
 plt.show()
+~
