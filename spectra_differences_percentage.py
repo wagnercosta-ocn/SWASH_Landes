@@ -26,7 +26,7 @@ if spec1.shape != spec2.shape:
     raise ValueError("Spectra must have identical dimensions.")
 
 # ============================================================
-# SPECTRAL GRID
+# FREQUENCY/DIRECTION GRID
 # ============================================================
 
 n_dir = 24
@@ -37,49 +37,49 @@ growth = 1.1
 n_freq = 30
 
 frequencies = f0 * growth**np.arange(n_freq)
-periods = 1.0 / frequencies
+periods = 1 / frequencies
 
 # ============================================================
-# SYMMETRIC PERCENTAGE DIFFERENCE
+# TOTAL SPECTRAL ENERGY OF CONTROL
 # ============================================================
 
-denominator = spec1 + spec2
+# Since frequency spacing is logarithmic, compute Δf
+df = np.empty_like(frequencies)
+df[:-1] = np.diff(frequencies)
+df[-1] = df[-2]
 
-# Ignore cells with almost no energy
-threshold = 1e-6
+# Direction increment (radians)
+dtheta = 2*np.pi / n_dir
 
-percent_diff = np.full_like(spec1, np.nan)
+# Total integrated spectral energy (m²)
+total_energy = np.sum(spec1 * df[:, None] * dtheta)
 
-mask = denominator > threshold
+print(f"Total control spectral energy = {total_energy:.4f} m²")
 
-percent_diff[mask] = (
-    200.0 * (spec2[mask] - spec1[mask]) /
-    denominator[mask]
+# ============================================================
+# PERCENT CONTRIBUTION TO TOTAL ENERGY CHANGE
+# ============================================================
+
+percent_change = (
+    100.0 *
+    (spec2 - spec1) /
+    total_energy
 )
 
-# Reverse frequency axis so long periods are outside
-percent_diff = percent_diff[::-1, :]
+# Reverse for plotting
+percent_change = percent_change[::-1, :]
 periods = periods[::-1]
-
-# ============================================================
-# POLAR GRID
-# ============================================================
 
 Theta, R = np.meshgrid(directions, periods)
 
 # ============================================================
-# ROBUST COLOR SCALE
+# COLOR SCALE
 # ============================================================
 
-valid = np.abs(percent_diff[np.isfinite(percent_diff)])
+vmax = np.nanpercentile(np.abs(percent_change), 99)
 
-if len(valid) == 0:
-    vmax = 1
-else:
-    vmax = np.nanpercentile(valid, 99)
-
-# Optional clipping to avoid a few extreme pixels
-vmax = min(vmax, 100)
+# Optional cap to make different stations comparable
+vmax = min(vmax, 5)
 
 vmin = -vmax
 
@@ -89,7 +89,7 @@ vmin = -vmax
 
 plt.rcParams.update({
     "font.size": 12,
-    "axes.linewidth": 1.2,
+    "axes.linewidth": 1.2
 })
 
 fig = plt.figure(figsize=(7,7))
@@ -102,7 +102,7 @@ ax.set_theta_direction(-1)
 pcm = ax.pcolormesh(
     Theta,
     R,
-    percent_diff,
+    percent_change,
     cmap="RdBu_r",
     shading="auto",
     vmin=vmin,
@@ -110,18 +110,15 @@ pcm = ax.pcolormesh(
 )
 
 # ============================================================
-# RADIAL AXIS
+# PERIOD AXIS
 # ============================================================
 
-period_ticks = [5, 8, 10, 12, 15, 20]
+period_ticks = [5,8,10,12,15,20]
 
 ax.set_ylim(periods.min(), periods.max())
 
 ax.set_yticks(period_ticks)
-ax.set_yticklabels(
-    [f"{p} s" for p in period_ticks],
-    fontsize=12
-)
+ax.set_yticklabels([f"{p} s" for p in period_ticks])
 
 # ============================================================
 # DIRECTION LABELS
@@ -129,13 +126,8 @@ ax.set_yticklabels(
 
 ax.set_thetagrids(
     np.arange(0,360,45),
-    labels=["N","NE","E","SE","S","SW","W","NW"],
-    fontsize=13
+    labels=["N","NE","E","SE","S","SW","W","NW"]
 )
-
-# ============================================================
-# GRID STYLE
-# ============================================================
 
 ax.grid(alpha=0.35)
 
@@ -146,11 +138,11 @@ ax.grid(alpha=0.35)
 cbar = plt.colorbar(
     pcm,
     pad=0.10,
-    shrink=0.70
+    shrink=0.72
 )
 
 cbar.set_label(
-    "Symmetric spectral energy difference (%)",
+    "Contribution to total spectral energy change (%)",
     fontsize=13
 )
 
@@ -173,9 +165,8 @@ plt.tight_layout()
 os.makedirs("outputs_landes", exist_ok=True)
 
 outfile = (
-    f"outputs_landes/"
-    f"symmetric_percent_difference_{lon}_{lat}_"
-    f"{name_spec1}_vs_{name_spec2}"
+    "outputs_landes/"
+    f"relative_energy_change_{lon}_{lat}_{name_spec1}_vs_{name_spec2}"
 )
 
 plt.savefig(outfile + ".png", dpi=500, bbox_inches="tight")
