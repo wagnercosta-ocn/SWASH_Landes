@@ -303,7 +303,7 @@ for counter, file1 in enumerate(out_files, start=1):
 
 
     ax.set_theta_zero_location("N")
-    ax.set_theta_direction(-1)
+    #ax.set_theta_direction(-1)
 
 
 
@@ -311,7 +311,7 @@ for counter, file1 in enumerate(out_files, start=1):
         Theta,
         R,
         contribution,
-        cmap="RdBu_r",
+        cmap="seismic",
         shading="auto",
         vmin=-global_vmax,
         vmax=global_vmax
@@ -407,12 +407,12 @@ for counter, file1 in enumerate(out_files, start=1):
 
     # Title
 
-    ax.set_title(
-        f"SWOT+CFOSAT - No assimilation\n"
-        f"lon={lon:.4f}, lat={lat:.4f}",
-        fontsize=14,
-        pad=20
-    )
+    #ax.set_title(
+    #    f"SWOT+CFOSAT - No assimilation\n"
+    #    f"lon={lon:.4f}, lat={lat:.4f}",
+    #    fontsize=14,
+    #    pad=20
+    #)
 
 
 
