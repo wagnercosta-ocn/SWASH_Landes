@@ -13,7 +13,89 @@ import matplotlib.cm as cm
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-from matplotlib_scalebar.scalebar import ScaleBar
+# ==========================================================
+# SCALE BAR (Cartopy native)
+# ==========================================================
+
+def add_scale_bar(ax, length_km=50, location=(0.08, 0.08)):
+    """
+    Add a simple scale bar to a Cartopy map.
+
+    Parameters
+    ----------
+    ax : cartopy axis
+    length_km : float
+        Scale bar length in km
+    location : tuple
+        Position in axes coordinates
+    """
+
+    # Current map extent
+    x0, x1, y0, y1 = ax.get_extent(
+        crs=ccrs.PlateCarree()
+    )
+
+    # Latitude at bottom of map
+    lat = y0 + 0.05*(y1-y0)
+
+    # Convert km to degrees longitude
+    # approximation valid for regional maps
+    deg_lon = length_km / (
+        111.32 * np.cos(np.deg2rad(lat))
+    )
+
+
+    x_start = x0 + location[0]*(x1-x0)
+    x_end = x_start + deg_lon
+
+    y = y0 + location[1]*(y1-y0)
+
+
+    # Draw bar
+    ax.plot(
+        [x_start, x_end],
+        [y, y],
+        transform=ccrs.PlateCarree(),
+        color="black",
+        linewidth=3,
+        solid_capstyle="butt",
+        zorder=10
+    )
+
+
+    # End ticks
+    ax.plot(
+        [x_start, x_start],
+        [y-0.01*(y1-y0), y+0.01*(y1-y0)],
+        transform=ccrs.PlateCarree(),
+        color="black",
+        linewidth=2,
+        zorder=10
+    )
+
+
+    ax.plot(
+        [x_end, x_end],
+        [y-0.01*(y1-y0), y+0.01*(y1-y0)],
+        transform=ccrs.PlateCarree(),
+        color="black",
+        linewidth=2,
+        zorder=10
+    )
+
+
+    # Label
+    ax.text(
+        (x_start+x_end)/2,
+        y+0.025*(y1-y0),
+        f"{length_km} km",
+        transform=ccrs.PlateCarree(),
+        ha="center",
+        va="bottom",
+        fontsize=9,
+        zorder=10
+    )
+
 
 # ============================================================
 # USER INPUTS
@@ -479,18 +561,10 @@ for ax in axes:
 # ==========================================================
 
 for ax in axes:
-
-    scalebar = ScaleBar(
-        1,
-        units="deg",
-        dimension="si-length",
-        location="lower right"
+    add_scale_bar(
+        ax,
+        length_km=50
     )
-
-    ax.add_artist(
-        scalebar
-    )
-
 
 # ==========================================================
 # SAVE
