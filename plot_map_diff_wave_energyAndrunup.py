@@ -1,10 +1,283 @@
 import numpy as np
 import pandas as pd
-
 import geopandas as gpd
 
 from shapely.geometry import Point
-from shapely.geometry import LineString
+
+import cartopy.io.shapereader as shpreader
+
+
+# ==========================================================
+# USER INPUTS
+# ==========================================================
+
+SPECTRAL_FILE = "spectral_points_delta.geojson"
+
+TRANSECTS_FILE = "transects_runup_q95.geojson"
+
+TRANSECT_POINTS_FILE = "transect_points.csv"
+
+
+OUTPUT_OFFSHORE = "offshore_delta_m0_points.geojson"
+
+OUTPUT_TRANSECTS = "final_transects_runup.geojson"
+
+
+TRANSECT_ID = "Transect_ID"
+
+LON = "Longitude"
+LAT = "Latitude"
+
+
+# ==========================================================
+# LOAD DATA
+# ==========================================================
+
+print("Loading files...")
+
+
+spectral = gpd.read_file(
+    SPECTRAL_FILE
+)
+
+
+transects = gpd.read_file(
+    TRANSECTS_FILE
+)
+
+
+transect_points = pd.read_csv(
+    TRANSECT_POINTS_FILE
+)
+
+
+
+# ==========================================================
+# CREATE TRANSECT POINT GEODATAFRAME
+# ==========================================================
+
+points_gdf = gpd.GeoDataFrame(
+    transect_points,
+
+    geometry=gpd.points_from_xy(
+        transect_points[LON],
+        transect_points[LAT]
+    ),
+
+    crs="EPSG:4326"
+)
+
+
+
+# ==========================================================
+# LOAD COASTLINE
+# ==========================================================
+
+print("Loading coastline...")
+
+
+land_shp = shpreader.natural_earth(
+    resolution="10m",
+    category="physical",
+    name="land"
+)
+
+
+land = gpd.read_file(
+    land_shp
+)
+
+
+land = land.to_crs(
+    "EPSG:3857"
+)
+
+
+
+# coastline boundary
+
+coastline = (
+    land
+    .boundary
+)
+
+
+
+# ==========================================================
+# PROJECT DATA TO METRIC CRS
+# ==========================================================
+
+print("Projecting...")
+
+
+points_m = points_gdf.to_crs(
+    "EPSG:3857"
+)
+
+spectral_m = spectral.to_crs(
+    "EPSG:3857"
+)
+
+
+
+# ==========================================================
+# FIND OFFSHORE POINT PER TRANSECT
+# ==========================================================
+
+print("Finding offshore points...")
+
+
+offshore_points = []
+
+
+for tid, group in points_m.groupby(
+        TRANSECT_ID
+):
+
+    distances = []
+
+    for geom in group.geometry:
+
+        d = (
+            coastline
+            .distance(geom)
+            .min()
+        )
+
+        distances.append(d)
+
+
+    group = group.copy()
+
+    group["coast_distance"] = distances
+
+
+    offshore = group.loc[
+        group["coast_distance"]
+        .idxmax()
+    ]
+
+
+    offshore_points.append(
+        offshore
+    )
+
+
+
+offshore_points = gpd.GeoDataFrame(
+    offshore_points,
+
+    crs="EPSG:3857"
+)
+
+
+
+print(
+    f"{len(offshore_points)} offshore points found"
+)
+
+
+
+# ==========================================================
+# MATCH OFFSHORE POINT WITH SPECTRAL POINT
+# ==========================================================
+
+print("Matching spectral points...")
+
+
+matched = []
+
+
+for _, row in offshore_points.iterrows():
+
+
+    tid = row[TRANSECT_ID]
+
+
+    candidates = spectral_m[
+        spectral_m[TRANSECT_ID]
+        ==
+        tid
+    ]
+
+
+    if len(candidates) == 0:
+
+        continue
+
+
+
+    distances = (
+        candidates.geometry
+        .distance(
+            row.geometry
+        )
+    )
+
+
+    idx = distances.idxmin()
+
+
+    selected = candidates.loc[idx]
+
+
+    matched.append(
+        selected
+    )
+
+
+
+offshore_spectral = gpd.GeoDataFrame(
+    matched,
+
+    crs="EPSG:3857"
+)
+
+
+
+print(
+    f"{len(offshore_spectral)} offshore spectral points matched"
+)
+
+
+
+# ==========================================================
+# SAVE OFFSHORE POINTS
+# ==========================================================
+
+offshore_spectral.to_crs(
+    "EPSG:4326"
+).to_file(
+    OUTPUT_OFFSHORE,
+    driver="GeoJSON"
+)
+
+
+
+# ==========================================================
+# SAVE TRANSECTS
+# ==========================================================
+
+transects.to_crs(
+    "EPSG:4326"
+).to_file(
+    OUTPUT_TRANSECTS,
+    driver="GeoJSON"
+)
+
+
+
+print()
+print("Saved:")
+print(
+    OUTPUT_OFFSHORE
+)
+
+print(
+    OUTPUT_TRANSECTS
+)
+import numpy as np
+import geopandas as gpd
 
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
@@ -13,265 +286,19 @@ import matplotlib.cm as cm
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-# ==========================================================
-# SCALE BAR (Cartopy native)
-# ==========================================================
-
-def add_scale_bar(ax, length_km=50, location=(0.08, 0.08)):
-    """
-    Add a simple scale bar to a Cartopy map.
-
-    Parameters
-    ----------
-    ax : cartopy axis
-    length_km : float
-        Scale bar length in km
-    location : tuple
-        Position in axes coordinates
-    """
-
-    # Current map extent
-    x0, x1, y0, y1 = ax.get_extent(
-        crs=ccrs.PlateCarree()
-    )
-
-    # Latitude at bottom of map
-    lat = y0 + 0.05*(y1-y0)
-
-    # Convert km to degrees longitude
-    # approximation valid for regional maps
-    deg_lon = length_km / (
-        111.32 * np.cos(np.deg2rad(lat))
-    )
-
-
-    x_start = x0 + location[0]*(x1-x0)
-    x_end = x_start + deg_lon
-
-    y = y0 + location[1]*(y1-y0)
-
-
-    # Draw bar
-    ax.plot(
-        [x_start, x_end],
-        [y, y],
-        transform=ccrs.PlateCarree(),
-        color="black",
-        linewidth=3,
-        solid_capstyle="butt",
-        zorder=10
-    )
-
-
-    # End ticks
-    ax.plot(
-        [x_start, x_start],
-        [y-0.01*(y1-y0), y+0.01*(y1-y0)],
-        transform=ccrs.PlateCarree(),
-        color="black",
-        linewidth=2,
-        zorder=10
-    )
-
-
-    ax.plot(
-        [x_end, x_end],
-        [y-0.01*(y1-y0), y+0.01*(y1-y0)],
-        transform=ccrs.PlateCarree(),
-        color="black",
-        linewidth=2,
-        zorder=10
-    )
-
-
-    # Label
-    ax.text(
-        (x_start+x_end)/2,
-        y+0.025*(y1-y0),
-        f"{length_km} km",
-        transform=ccrs.PlateCarree(),
-        ha="center",
-        va="bottom",
-        fontsize=9,
-        zorder=10
-    )
-
-
-# ============================================================
-# USER INPUTS
-# ============================================================
-
-# Produced previously
-DELTA_M0_FILE = "Delta_m0_percent_by_transect.parquet"
-
-# CSV containing all transect points
-TRANSECT_POINTS_FILE = "transect_points.csv"
-
-# Run-up differences
-RUNUP_FILE = "Runup_difference.csv"
-
-# Outputs
-OUTPUT_TRANSECTS = "transects_runup_q95.geojson"
-OUTPUT_SPECTRAL = "spectral_points_delta.geojson"
-
-# ------------------------------------------------------------
-
-TRANSECT_ID = "Transect_ID"
-
-TRANSECT_LON = "Longitude"
-TRANSECT_LAT = "Latitude"
-
-RUNUP_DIFF = "Difference"
-
-# ============================================================
-# LOAD FILES
-# ============================================================
-
-print("Loading Δm0 dataframe...")
-
-delta = pd.read_parquet(DELTA_M0_FILE)
-
-print("Loading transects...")
-
-transects = pd.read_csv(TRANSECT_POINTS_FILE)
-
-print("Loading run-up...")
-
-runup = pd.read_csv(RUNUP_FILE)
-
-# ============================================================
-# COMPUTE Q95 OF RUNUP DIFFERENCE
-# ============================================================
-
-print("Computing Q95...")
-
-runup_q95 = (
-    runup
-    .groupby(TRANSECT_ID)[RUNUP_DIFF]
-    .quantile(0.95)
-    .reset_index()
-)
-
-runup_q95.rename(
-    columns={
-        RUNUP_DIFF: "Runup_Q95"
-    },
-    inplace=True
-)
-
-print(runup_q95.head())
-
-# ============================================================
-# BUILD TRANSECT LINES
-# ============================================================
-
-print("Building LineStrings...")
-
-lines = []
-
-for tid, group in transects.groupby(TRANSECT_ID):
-
-    group = group.copy()
-
-    group = group.sort_index()
-
-    coords = list(
-        zip(
-            group[TRANSECT_LON],
-            group[TRANSECT_LAT]
-        )
-    )
-
-    if len(coords) < 2:
-        continue
-
-    line = LineString(coords)
-
-    lines.append(
-        {
-            TRANSECT_ID: tid,
-            "geometry": line
-        }
-    )
-
-transects_gdf = gpd.GeoDataFrame(
-    lines,
-    crs="EPSG:4326"
-)
-
-print(
-    f"{len(transects_gdf)} transects created."
-)
-
-# ============================================================
-# JOIN Q95
-# ============================================================
-
-transects_gdf = transects_gdf.merge(
-    runup_q95,
-    on=TRANSECT_ID,
-    how="left"
-)
-
-# ============================================================
-# BUILD SPECTRAL POINTS
-# ============================================================
-
-geometry = gpd.points_from_xy(
-    delta["Spectrum_Lon"],
-    delta["Spectrum_Lat"]
-)
-
-spectral_gdf = gpd.GeoDataFrame(
-    delta,
-    geometry=geometry,
-    crs="EPSG:4326"
-)
-
-# ============================================================
-# CHECK
-# ============================================================
-
-print()
-
-print(spectral_gdf.head())
-
-print()
-
-print(transects_gdf.head())
-
-# ============================================================
-# SAVE
-# ============================================================
-
-spectral_gdf.to_file(
-    OUTPUT_SPECTRAL,
-    driver="GeoJSON"
-)
-
-transects_gdf.to_file(
-    OUTPUT_TRANSECTS,
-    driver="GeoJSON"
-)
-
-print()
-
-print("Saved:")
-
-print(" ", OUTPUT_SPECTRAL)
-
-print(" ", OUTPUT_TRANSECTS)
-
+from matplotlib.patches import Rectangle
 
 
 # ==========================================================
-# USER INPUTS
+# INPUTS
 # ==========================================================
 
-SPECTRAL_FILE = "spectral_points_delta.geojson"
-TRANSECTS_FILE = "transects_runup_q95.geojson"
+OFFSHORE_FILE = "offshore_delta_m0_points.geojson"
 
-OUTPUT_FIG = "Delta_m0_Runup_maps.png"
+TRANSECTS_FILE = "final_transects_runup.geojson"
+
+
+OUTPUT_FIG = "Delta_m0_vs_Runup_map.png"
 
 
 # ==========================================================
@@ -280,64 +307,102 @@ OUTPUT_FIG = "Delta_m0_Runup_maps.png"
 
 print("Loading data...")
 
-spectral = gpd.read_file(SPECTRAL_FILE)
 
-transects = gpd.read_file(TRANSECTS_FILE)
+offshore = gpd.read_file(
+    OFFSHORE_FILE
+)
+
+
+transects = gpd.read_file(
+    TRANSECTS_FILE
+)
+
 
 
 # ==========================================================
-# COLOR LIMITS
+# PROJECTION FOR PLOTTING
 # ==========================================================
 
-# Delta m0 %
+# Web Mercator is convenient for Cartopy
+crs_plot = ccrs.PlateCarree()
 
-vmax_energy = np.nanpercentile(
+
+offshore_plot = offshore.to_crs(
+    "EPSG:4326"
+)
+
+transects_plot = transects.to_crs(
+    "EPSG:4326"
+)
+
+
+
+# ==========================================================
+# COLOR NORMALIZATION
+# ==========================================================
+
+
+energy_limit = np.nanpercentile(
     np.abs(
-        spectral["Delta_m0_percent"]
+        offshore_plot["Delta_m0_percent"]
     ),
     98
 )
+
+
+runup_limit = np.nanpercentile(
+    np.abs(
+        transects_plot["Runup_Q95"]
+    ),
+    98
+)
+
 
 norm_energy = colors.TwoSlopeNorm(
-    vmin=-vmax_energy,
+    vmin=-energy_limit,
     vcenter=0,
-    vmax=vmax_energy
+    vmax=energy_limit
 )
 
-
-# Runup
-
-vmax_runup = np.nanpercentile(
-    np.abs(
-        transects["Runup_Q95"]
-    ),
-    98
-)
 
 norm_runup = colors.TwoSlopeNorm(
-    vmin=-vmax_runup,
+    vmin=-runup_limit,
     vcenter=0,
-    vmax=vmax_runup
+    vmax=runup_limit
 )
 
 
 cmap = plt.cm.RdBu_r
 
 
+
 # ==========================================================
 # MAP EXTENT
 # ==========================================================
 
-bounds = spectral.total_bounds
+all_geom = (
+    offshore_plot
+    .geometry
+    .union_all()
+)
 
-margin = 0.3
+
+xmin, ymin, xmax, ymax = (
+    all_geom.bounds
+)
+
+
+margin_x = 0.35
+margin_y = 0.25
+
 
 extent = [
-    bounds[0]-margin,
-    bounds[2]+margin,
-    bounds[1]-margin,
-    bounds[3]+margin
+    xmin-margin_x,
+    xmax+margin_x,
+    ymin-margin_y,
+    ymax+margin_y
 ]
+
 
 
 # ==========================================================
@@ -349,40 +414,47 @@ fig = plt.figure(
 )
 
 
-projection = ccrs.PlateCarree()
-
-
 ax1 = fig.add_subplot(
     1,
     2,
     1,
-    projection=projection
+    projection=crs_plot
 )
+
 
 ax2 = fig.add_subplot(
     1,
     2,
     2,
-    projection=projection
+    projection=crs_plot
 )
 
 
+axes = [
+    ax1,
+    ax2
+]
 
-axes = [ax1, ax2]
+
+# ==========================================================
+# COMMON MAP SETTINGS
+# ==========================================================
 
 
 for ax in axes:
 
     ax.set_extent(
         extent,
-        crs=projection
+        crs=crs_plot
     )
+
 
     ax.add_feature(
         cfeature.LAND,
-        facecolor="lightgray",
+        facecolor="0.85",
         zorder=0
     )
+
 
     ax.add_feature(
         cfeature.OCEAN,
@@ -390,58 +462,68 @@ for ax in axes:
         zorder=0
     )
 
+
     ax.add_feature(
         cfeature.COASTLINE,
         linewidth=0.8,
         zorder=3
     )
 
-    ax.gridlines(
+
+    gl = ax.gridlines(
         draw_labels=True,
         linewidth=0.3,
         alpha=0.5
     )
 
+    gl.top_labels = False
+    gl.right_labels = False
+
+
 
 # ==========================================================
-# PANEL A
+# PANEL A : DELTA M0
 # ==========================================================
 
-print("Plotting Δm0...")
 
 sc = ax1.scatter(
-    spectral.geometry.x,
-    spectral.geometry.y,
 
-    c=spectral["Delta_m0_percent"],
+    offshore_plot.geometry.x,
+
+    offshore_plot.geometry.y,
+
+    c=offshore_plot["Delta_m0_percent"],
 
     cmap=cmap,
 
     norm=norm_energy,
 
-    s=15,
+    s=35,
 
-    edgecolor="none",
+    edgecolor="black",
 
-    transform=projection,
+    linewidth=0.3,
+
+    transform=crs_plot,
 
     zorder=5
 )
 
 
 ax1.set_title(
-    "(a) Relative wave energy change",
+    "(a) Offshore relative wave-energy change",
     fontsize=13
 )
 
 
+
 # ==========================================================
-# PANEL B
+# PANEL B : RUNUP
 # ==========================================================
 
-print("Plotting runup...")
 
-transects.plot(
+transects_plot.plot(
+
     ax=ax2,
 
     column="Runup_Q95",
@@ -450,18 +532,222 @@ transects.plot(
 
     norm=norm_runup,
 
-    linewidth=2.5,
+    linewidth=2.0,
 
-    transform=projection,
+    transform=crs_plot,
 
     zorder=5
 )
 
 
 ax2.set_title(
-    "(b) 95th percentile wave run-up difference",
+    "(b) Coastal extreme run-up response",
     fontsize=13
 )
+
+
+
+# ==========================================================
+# CITY LOCATIONS
+# ==========================================================
+
+
+cities = {
+
+    "Arcachon":
+        (-1.17,44.66),
+
+    "Mimizan":
+        (-1.16,44.20),
+
+    "Capbreton":
+        (-1.43,43.64),
+
+    "Biarritz":
+        (-1.56,43.48)
+
+}
+
+
+
+for name,(lon,lat) in cities.items():
+
+    for ax in axes:
+
+        ax.plot(
+            lon,
+            lat,
+            marker="o",
+            markersize=4,
+            color="black",
+            transform=crs_plot,
+            zorder=8
+        )
+
+
+        ax.text(
+
+            lon+0.05,
+
+            lat+0.03,
+
+            name,
+
+            fontsize=9,
+
+            transform=crs_plot,
+
+            zorder=8
+        )
+
+
+
+# ==========================================================
+# BAY OF BISCAY LABEL
+# ==========================================================
+
+
+for ax in axes:
+
+    ax.text(
+
+        -2.8,
+
+        44.2,
+
+        "Bay of Biscay",
+
+        fontsize=13,
+
+        fontstyle="italic",
+
+        color="0.25",
+
+        transform=crs_plot,
+
+        rotation=0
+
+    )
+
+
+
+# ==========================================================
+# NORTH ARROW
+# ==========================================================
+
+
+def north_arrow(ax):
+
+    ax.annotate(
+
+        "N",
+
+        xy=(0.92,0.85),
+
+        xycoords="axes fraction",
+
+        fontsize=14,
+
+        fontweight="bold",
+
+        ha="center"
+
+    )
+
+
+    ax.arrow(
+
+        0.92,
+
+        0.73,
+
+        0,
+
+        0.08,
+
+        transform=ax.transAxes,
+
+        width=0.004,
+
+        head_width=0.025,
+
+        head_length=0.025,
+
+        color="black"
+
+    )
+
+
+for ax in axes:
+
+    north_arrow(ax)
+
+
+
+# ==========================================================
+# SCALE BAR
+# ==========================================================
+
+
+def add_scale_bar(ax, length_km=50):
+
+    xmin,xmax,ymin,ymax = ax.get_extent(
+        crs_plot
+    )
+
+
+    lat = ymin + 0.08*(ymax-ymin)
+
+
+    deg = length_km / (
+        111.32*np.cos(
+            np.deg2rad(lat)
+        )
+    )
+
+
+    x0 = xmin + 0.08*(xmax-xmin)
+
+    x1 = x0 + deg
+
+
+    ax.plot(
+
+        [x0,x1],
+
+        [lat,lat],
+
+        transform=crs_plot,
+
+        color="black",
+
+        linewidth=3
+
+    )
+
+
+    ax.text(
+
+        (x0+x1)/2,
+
+        lat+0.03,
+
+        f"{length_km} km",
+
+        transform=crs_plot,
+
+        ha="center",
+
+        fontsize=9
+
+    )
+
+
+
+for ax in axes:
+
+    add_scale_bar(ax)
+
 
 
 # ==========================================================
@@ -469,7 +755,8 @@ ax2.set_title(
 # ==========================================================
 
 
-cbar1 = fig.colorbar(
+cb1 = fig.colorbar(
+
     cm.ScalarMappable(
         norm=norm_energy,
         cmap=cmap
@@ -479,19 +766,19 @@ cbar1 = fig.colorbar(
 
     orientation="horizontal",
 
-    pad=0.05,
+    pad=0.05
 
-    fraction=0.05
 )
 
 
-cbar1.set_label(
+cb1.set_label(
     r"$\Delta m_0$ (%)"
 )
 
 
 
-cbar2 = fig.colorbar(
+cb2 = fig.colorbar(
+
     cm.ScalarMappable(
         norm=norm_runup,
         cmap=cmap
@@ -501,74 +788,21 @@ cbar2 = fig.colorbar(
 
     orientation="horizontal",
 
-    pad=0.05,
+    pad=0.05
 
-    fraction=0.05
 )
 
 
-cbar2.set_label(
-    r"$\Delta R_{95}$ (m)"
+cb2.set_label(
+    r"$Q_{95}(\Delta R)$ (m)"
 )
 
 
-# ==========================================================
-# NORTH ARROWS
-# ==========================================================
-
-def add_north_arrow(ax):
-
-    ax.annotate(
-        "N",
-
-        xy=(0.93,0.85),
-
-        xycoords="axes fraction",
-
-        fontsize=14,
-
-        ha="center",
-
-        va="center",
-
-        fontweight="bold"
-    )
-
-    ax.arrow(
-        0.93,
-        0.75,
-
-        0,
-        0.08,
-
-        transform=ax.transAxes,
-
-        width=0.005,
-
-        head_width=0.03,
-
-        head_length=0.03
-    )
-
-
-for ax in axes:
-    add_north_arrow(ax)
-
-
-
-# ==========================================================
-# SCALE BAR
-# ==========================================================
-
-for ax in axes:
-    add_scale_bar(
-        ax,
-        length_km=50
-    )
 
 # ==========================================================
 # SAVE
 # ==========================================================
+
 
 plt.tight_layout()
 
