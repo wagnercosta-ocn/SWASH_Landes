@@ -96,70 +96,19 @@ def add_scale_bar(ax, length_km=50, location=(0.08, 0.08)):
         zorder=10
     )
 
-from scipy.spatial.distance import cdist
 
-def find_offshore_points(
-        transects_df,
-        id_col="Transect_ID",
-        lon_col="Longitude",
-        lat_col="Latitude"
-    ):
-    """
-    Determine the offshore endpoint of every transect.
-
-    Parameters
-    ----------
-    transects_df : pandas.DataFrame
-
-    Returns
-    -------
-    pandas.DataFrame
-        One row per transect containing the offshore coordinates.
-    """
-
-    offshore = []
-
-    for tid, group in transects_df.groupby(id_col):
-
-        group = group.copy()
-
-        coords = group[[lon_col, lat_col]].values
-
-        # centroid
-        centroid = coords.mean(axis=0)
-
-        # distance of every point to centroid
-        d = np.sqrt(
-            (coords[:,0]-centroid[0])**2 +
-            (coords[:,1]-centroid[1])**2
-        )
-
-        idx = np.argmax(d)
-
-        offshore.append({
-
-            id_col: tid,
-
-            "Spectrum_Lon": coords[idx,0],
-
-            "Spectrum_Lat": coords[idx,1]
-
-        })
-
-    return pd.DataFrame(offshore)
-        
 # ============================================================
 # USER INPUTS
 # ============================================================
 
 # Produced previously
-DELTA_M0_FILE = "Delta_m0_percent_by_transect.parquet"
+DELTA_M0_FILE = "Delta_m0_percent_by_transect.csv"
 
 # CSV containing all transect points
-TRANSECT_POINTS_FILE = "transect_points.csv"
+TRANSECT_POINTS_FILE = "../swash_landes/transects_points_with_depth.csv"
 
 # Run-up differences
-RUNUP_FILE = "Runup_difference.csv"
+RUNUP_FILE = "../swash_landes/swash_cases/runup_comparison.csv"
 
 # Outputs
 OUTPUT_TRANSECTS = "transects_runup_q95.geojson"
@@ -167,10 +116,12 @@ OUTPUT_SPECTRAL = "spectral_points_delta.geojson"
 
 # ------------------------------------------------------------
 
-TRANSECT_ID = "Transect_ID"
+TRANSECT_ID = "transect_id"
 
-TRANSECT_LON = "Longitude"
-TRANSECT_LAT = "Latitude"
+TRANSECT_ID_run ="Transect_ID"
+
+TRANSECT_LON = "longitude"
+TRANSECT_LAT = "latitude"
 
 RUNUP_DIFF = "Difference"
 
@@ -180,7 +131,7 @@ RUNUP_DIFF = "Difference"
 
 print("Loading Δm0 dataframe...")
 
-delta = pd.read_parquet(DELTA_M0_FILE)
+delta = pd.read_csv(DELTA_M0_FILE)
 
 print("Loading transects...")
 
@@ -189,7 +140,7 @@ transects = pd.read_csv(TRANSECT_POINTS_FILE)
 print("Loading run-up...")
 
 runup = pd.read_csv(RUNUP_FILE)
-
+runup = runup.rename(columns={"Transect_ID":"transect_id"})
 # ============================================================
 # COMPUTE Q95 OF RUNUP DIFFERENCE
 # ============================================================
@@ -267,21 +218,27 @@ transects_gdf = transects_gdf.merge(
 # ============================================================
 # BUILD SPECTRAL POINTS
 # ============================================================
-offshore_points = find_offshore_points(
-    transects,
-    TRANSECT_ID,
-    TRANSECT_LON,
-    TRANSECT_LAT
+points_gdf = transects_gdf.copy()
+
+# Replace each LineString geometry with its first point
+points_gdf["geometry"] = points_gdf.geometry.apply(
+    lambda line: Point(line.coords[-1])
 )
 
-geometry = gpd.points_from_xy(
-    offshore_points["Spectrum_Lon"],
-    offshore_points["Spectrum_Lat"]
+# Ensure it is still a GeoDataFrame
+points_gdf = gpd.GeoDataFrame(
+    points_gdf,
+    geometry="geometry",
+    crs=transects_gdf.crs
 )
+#geometry = gpd.points_from_xy(
+#    delta["Spectrum_Lon"],
+#    delta["Spectrum_Lat"]
+#)
 
 spectral_gdf = gpd.GeoDataFrame(
     delta,
-    geometry=geometry,
+    geometry=points_gdf.geometry,#geometry,
     crs="EPSG:4326"
 )
 
@@ -511,7 +468,9 @@ transects.plot(
 
     transform=projection,
 
-    zorder=5
+    zorder=5,
+    vmin=-1.5,
+    vmax=1.5
 )
 
 
@@ -520,126 +479,4 @@ ax2.set_title(
     fontsize=13
 )
 
-
-# ==========================================================
-# COLORBARS
-# ==========================================================
-
-
-cbar1 = fig.colorbar(
-    cm.ScalarMappable(
-        norm=norm_energy,
-        cmap=cmap
-    ),
-
-    ax=ax1,
-
-    orientation="horizontal",
-
-    pad=0.05,
-
-    fraction=0.05
-)
-
-
-cbar1.set_label(
-    r"$\Delta m_0$ (%)"
-)
-
-
-
-cbar2 = fig.colorbar(
-    cm.ScalarMappable(
-        norm=norm_runup,
-        cmap=cmap
-    ),
-
-    ax=ax2,
-
-    orientation="horizontal",
-
-    pad=0.05,
-
-    fraction=0.05
-)
-
-
-cbar2.set_label(
-    r"$\Delta R_{95}$ (m)"
-)
-
-
-# ==========================================================
-# NORTH ARROWS
-# ==========================================================
-
-def add_north_arrow(ax):
-
-    ax.annotate(
-        "N",
-
-        xy=(0.93,0.85),
-
-        xycoords="axes fraction",
-
-        fontsize=14,
-
-        ha="center",
-
-        va="center",
-
-        fontweight="bold"
-    )
-
-    ax.arrow(
-        0.93,
-        0.75,
-
-        0,
-        0.08,
-
-        transform=ax.transAxes,
-
-        width=0.005,
-
-        head_width=0.03,
-
-        head_length=0.03
-    )
-
-
-for ax in axes:
-    add_north_arrow(ax)
-
-
-
-# ==========================================================
-# SCALE BAR
-# ==========================================================
-
-for ax in axes:
-    add_scale_bar(
-        ax,
-        length_km=50
-    )
-
-# ==========================================================
-# SAVE
-# ==========================================================
-
-plt.tight_layout()
-
-
-plt.savefig(
-    OUTPUT_FIG,
-    dpi=600,
-    bbox_inches="tight"
-)
-
-
-plt.show()
-
-
-print()
-print("Saved:")
-print(OUTPUT_FIG)
+                                                                                        
