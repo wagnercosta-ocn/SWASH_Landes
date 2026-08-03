@@ -308,6 +308,11 @@ def write_swashinit(folder, sws_filename):
 # =========================
 # MAIN LOOP
 # =========================
+
+# =========================
+# MAIN LOOP
+# =========================
+
 aut_files = glob.glob(os.path.join(aut_folder, "AUT*"))
 
 processed = set()
@@ -318,6 +323,11 @@ for aut in aut_files:
 
     blocks = read_aut_file(aut)
 
+    # -----------------------------------
+    # Organize spectra by date
+    # -----------------------------------
+    blocks_by_date = {}
+
     for block in blocks:
 
         dt = datetime.strptime(block["date"], "%Y%m%d%H%M")
@@ -325,24 +335,61 @@ for aut in aut_files:
         if not (start_dt <= dt <= end_dt):
             continue
 
+        blocks_by_date.setdefault(block["date"], []).append(block)
+
+    # -----------------------------------
+    # Loop over each time
+    # -----------------------------------
+    for date, date_blocks in blocks_by_date.items():
+
+        print(f"\nDate {date}: {len(date_blocks)} spectra")
+
+        # -----------------------------------
+        # Loop over transects
+        # -----------------------------------
         for tid, data in transects.items():
 
-            key = (tid, block["date"])
+            key = (tid, date)
 
             if key in processed:
                 continue
 
-            dist = haversine(
-                data["lat"],
-                data["lon"],
-                block["lat"],
-                block["lon"]
-            )
+            # -----------------------------------
+            # Find nearest spectrum
+            # -----------------------------------
+            best_block = None
+            best_dist = np.inf
 
-            # skip if too far
-            if dist > 50000:
+            for block in date_blocks:
+
+                dist = haversine(
+                    data["lat"],
+                    data["lon"],
+                    block["lat"],
+                    block["lon"]
+                )
+
+                if dist < best_dist:
+                    best_dist = dist
+                    best_block = block
+
+            if best_block is None:
                 continue
 
+            # Optional maximum distance
+            if best_dist > 10000:
+                print(f"Transect {tid}: nearest spectrum is {best_dist/1000:.1f} km away -> skipped")
+                continue
+
+            print(
+                f"Transect {tid} -> "
+                f"Spectrum ({best_block['lon']:.3f}, {best_block['lat']:.3f}) "
+                f"Distance = {best_dist:.0f} m"
+            )
+
+            # -----------------------------------
+            # Create folders
+            # -----------------------------------
             transect_folder = os.path.join(
                 output_root,
                 str(tid)
@@ -350,14 +397,14 @@ for aut in aut_files:
 
             case_folder = os.path.join(
                 transect_folder,
-                f"case_{block['date']}"
+                f"case_{date}"
             )
 
             os.makedirs(case_folder, exist_ok=True)
 
-            # =========================
-            # BOT FILE
-            # =========================
+            # -----------------------------------
+            # BOT
+            # -----------------------------------
             bot_path = os.path.join(
                 case_folder,
                 f"{tid}.bot"
@@ -369,29 +416,29 @@ for aut in aut_files:
                 fmt="%.5f"
             )
 
-            # =========================
-            # SPECTRUM FILE
-            # =========================
+            # -----------------------------------
+            # Spectrum
+            # -----------------------------------
             spec_file = write_spectrum(
                 case_folder,
                 tid,
-                block
+                best_block
             )
 
-            # =========================
-            # SWS FILE
-            # =========================
+            # -----------------------------------
+            # SWS
+            # -----------------------------------
             sws_filename = write_sws(
                 case_folder,
                 tid,
                 data,
                 spec_file,
-                block
+                best_block
             )
 
-            # =========================
-            # SWASHINIT FILE
-            # =========================
+            # -----------------------------------
+            # swashinit
+            # -----------------------------------
             write_swashinit(
                 case_folder,
                 sws_filename
