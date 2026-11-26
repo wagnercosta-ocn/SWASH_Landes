@@ -5,8 +5,8 @@ import pandas as pd
 # USER SETTINGS
 # ==========================================================
 
-aut_file = "outputs/spectra_AUT.pkl"
-out_file = "outputs/spectra_OUT.pkl"
+aut_file = "outputs/spectra_database_exp4.pkl"
+out_file = "outputs/spectra_database_control.pkl"
 
 output_file = "outputs/Hs_direction_database.pkl"
 
